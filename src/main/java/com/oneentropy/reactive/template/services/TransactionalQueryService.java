@@ -10,10 +10,10 @@ public interface TransactionalQueryService {
 
     Mono<ResponseResult> executeUpdate(ExecutionData executionData);
 
-    Mono<List<ResponseResult>> executeUpdate(List<ExecutionData> executionDataList);
+    Mono<List<ResponseResult>> executeUpdate(List<ExecutionData> executionDataList, boolean sync);
 
     Mono<ResponseResult> execute(ExecutionData executionData);
 
-    Mono<List<ResponseResult>> execute(List<ExecutionData> executionDataList);
+    Mono<List<ResponseResult>> execute(List<ExecutionData> executionDataList, boolean sync);
 
 }

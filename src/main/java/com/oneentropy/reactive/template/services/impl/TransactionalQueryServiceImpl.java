@@ -25,9 +25,9 @@ public class TransactionalQueryServiceImpl implements TransactionalQueryService 
     }
 
     @Override
-    public Mono<List<ResponseResult>> executeUpdate(List<ExecutionData> executionDataList) {
+    public Mono<List<ResponseResult>> executeUpdate(List<ExecutionData> executionDataList,boolean sync) {
         QueryExecutor queryExecutor = new QueryExecutor(connectionsCache);
-        return queryExecutor.executeUpdate(executionDataList);
+        return queryExecutor.executeUpdate(executionDataList,sync);
     }
 
     @Override
@@ -37,9 +37,9 @@ public class TransactionalQueryServiceImpl implements TransactionalQueryService 
     }
 
     @Override
-    public Mono<List<ResponseResult>> execute(List<ExecutionData> executionDataList) {
+    public Mono<List<ResponseResult>> execute(List<ExecutionData> executionDataList,boolean sync) {
         QueryExecutor queryExecutor = new QueryExecutor(connectionsCache);
-        return queryExecutor.execute(executionDataList);
+        return queryExecutor.execute(executionDataList,sync);
     }
 
 

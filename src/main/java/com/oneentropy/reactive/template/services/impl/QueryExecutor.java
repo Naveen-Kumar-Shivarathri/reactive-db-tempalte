@@ -10,6 +10,7 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
 import javax.management.JMX;
@@ -113,10 +114,16 @@ public class QueryExecutor {
         }
     }
 
-    public Mono<List<ResponseResult>> executeUpdate(List<ExecutionData> executionDataList) {
-
+    public Mono<List<ResponseResult>> executeUpdate(List<ExecutionData> executionDataList, boolean sync) {
+        Scheduler schedulerHolder = null;
+        if (sync)
+            schedulerHolder = Schedulers.single();
+        else
+            schedulerHolder = Schedulers.boundedElastic();
+        Scheduler scheduler = schedulerHolder;
         return Flux.fromIterable(executionDataList).flatMap(executionData -> {
             boolean namedParams = executionData.isNamedParamsExecution();
+
             try {
                 String uuid = UUID.randomUUID().toString();
                 Template templateHolder = null;
@@ -142,8 +149,8 @@ public class QueryExecutor {
                         logFailure(startTime, System.currentTimeMillis(), executionData.getSql(), exception);
                         runningConnections.updateStatus(executionData.getConnName(), uuid, ConnectionInfo.IDLE);
                         return handleException(exception);
-                    });
-                }).subscribeOn(Schedulers.boundedElastic());
+                    }).subscribeOn(scheduler);
+                });
             } catch (SQLException e) {
                 return handleException(e);
             }
@@ -158,7 +165,7 @@ public class QueryExecutor {
             else runningConnections.commit();
             runningConnections.returnConnectionsToPool();
             return Mono.just(responseResults);
-        }).subscribeOn(Schedulers.boundedElastic());
+        }).subscribeOn(scheduler);
 
 
     }
@@ -202,8 +209,13 @@ public class QueryExecutor {
         }
     }
 
-    public Mono<List<ResponseResult>> execute(List<ExecutionData> executionDataList) {
-
+    public Mono<List<ResponseResult>> execute(List<ExecutionData> executionDataList, boolean sync) {
+        Scheduler schedulerHolder = null;
+        if (sync)
+            schedulerHolder = Schedulers.single();
+        else
+            schedulerHolder = Schedulers.boundedElastic();
+        Scheduler scheduler = schedulerHolder;
         return Flux.fromIterable(executionDataList).flatMap(executionData -> {
                     boolean namedParams = executionData.isNamedParamsExecution();
                     try {
@@ -231,7 +243,7 @@ public class QueryExecutor {
                                 logFailure(startTime, System.currentTimeMillis(), executionData.getSql(), exception);
                                 runningConnections.updateStatus(executionData.getConnName(), uuid, ConnectionInfo.IDLE);
                                 return handleException(exception);
-                            });
+                            }).subscribeOn(scheduler);
                         });
                     } catch (SQLException e) {
                         return handleException(e);
@@ -248,7 +260,7 @@ public class QueryExecutor {
                     runningConnections.returnConnectionsToPool();
                     return Mono.just(responseResults);
                 })
-                .subscribeOn(Schedulers.boundedElastic());
+                .subscribeOn(scheduler);
 
 
     }

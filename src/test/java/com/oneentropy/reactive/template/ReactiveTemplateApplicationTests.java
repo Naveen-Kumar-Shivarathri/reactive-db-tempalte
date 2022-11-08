@@ -36,14 +36,14 @@ class ReactiveTemplateApplicationTests {
 	@Test
 	void testUpdateQueryCall() {
 
-		String sql = "insert into tableA (columnA,columnB) values(?,?)";
+		String insert = "insert into tableA (columnA,columnB) values(?,?)";
 		String deleteSql = "delete from tableA where columnA=?";
 		String select = "select * from tableA where columnA=?";
 		List<ExecutionData> executionDataList = new ArrayList<>();
 		for(int iterator=0;iterator<100;iterator++){
-			executionDataList.add(ExecutionData.builder().sql(select).params(new Object[]{iterator}).connName("mysql").build());
+			executionDataList.add(ExecutionData.builder().sql(deleteSql).params(new Object[]{iterator}).connName("mysql").build());
 		}
-		Mono<List<ResponseResult>> responseResultMono = transactionalQueryService.execute(executionDataList);
+		Mono<List<ResponseResult>> responseResultMono = transactionalQueryService.executeUpdate(executionDataList,false);
 		StepVerifier.create(responseResultMono)
 				.expectNextMatches(responseResult -> {
 					return responseResult.stream().allMatch(responseResult1 -> {
