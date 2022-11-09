@@ -116,9 +116,10 @@ public class QueryExecutor {
 
     public Mono<List<ResponseResult>> executeUpdate(List<ExecutionData> executionDataList, boolean sync) {
         Scheduler schedulerHolder = null;
-        if (sync)
+        if (sync) {
+            log.debug("Executing Queries in synchronized mode on a single thread");
             schedulerHolder = Schedulers.single();
-        else
+        } else
             schedulerHolder = Schedulers.boundedElastic();
         Scheduler scheduler = schedulerHolder;
         return Flux.fromIterable(executionDataList).flatMap(executionData -> {
@@ -211,9 +212,10 @@ public class QueryExecutor {
 
     public Mono<List<ResponseResult>> execute(List<ExecutionData> executionDataList, boolean sync) {
         Scheduler schedulerHolder = null;
-        if (sync)
+        if (sync) {
+            log.debug("Executing Queries in synchronized mode on a single thread");
             schedulerHolder = Schedulers.single();
-        else
+        } else
             schedulerHolder = Schedulers.boundedElastic();
         Scheduler scheduler = schedulerHolder;
         return Flux.fromIterable(executionDataList).flatMap(executionData -> {
