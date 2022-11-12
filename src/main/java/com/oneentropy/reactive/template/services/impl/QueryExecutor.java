@@ -187,7 +187,7 @@ public class QueryExecutor {
                         return Mono.defer(() -> {
                             Object payload = null;
                             if (namedParams)
-                                payload = template.getNamedParameterJdbcTemplate().queryForObject(executionData.getSql(), executionData.getNamedParams(), (rs, rowNum) -> mapRow(rs, rowNum));
+                                payload = template.getNamedParameterJdbcTemplate().query(executionData.getSql(), executionData.getNamedParams(), (rs, rowNum) -> mapRow(rs, rowNum));
                             else
                                 payload = template.getJdbcTemplate().query(executionData.getSql(), (rs, rowNum) -> mapRow(rs, rowNum), executionData.getParams());
                             long endTime = System.currentTimeMillis();
@@ -234,7 +234,7 @@ public class QueryExecutor {
                             return Mono.defer(() -> {
                                 Object payload = null;
                                 if (namedParams)
-                                    payload = template.getNamedParameterJdbcTemplate().queryForObject(executionData.getSql(), executionData.getNamedParams(), (rs, rowNum) -> mapRow(rs, rowNum));
+                                    payload = template.getNamedParameterJdbcTemplate().query(executionData.getSql(), executionData.getNamedParams(), (rs, rowNum) -> mapRow(rs, rowNum));
                                 else
                                     payload = template.getJdbcTemplate().query(executionData.getSql(), (rs, rowNum) -> mapRow(rs, rowNum), executionData.getParams());
                                 long endTime = System.currentTimeMillis();
