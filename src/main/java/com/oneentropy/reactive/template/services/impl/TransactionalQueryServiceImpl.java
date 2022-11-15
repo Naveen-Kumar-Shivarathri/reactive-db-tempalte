@@ -20,26 +20,26 @@ public class TransactionalQueryServiceImpl implements TransactionalQueryService 
 
     @Override
     public Mono<ResponseResult> executeUpdate(ExecutionData executionData) {
-        QueryExecutor queryExecutor = new QueryExecutor(connectionsCache);
-        return queryExecutor.executeUpdate(executionData);
+        AutoQueryExecutor autoQueryExecutor = new AutoQueryExecutor(connectionsCache);
+        return autoQueryExecutor.executeUpdate(executionData);
     }
 
     @Override
     public Mono<List<ResponseResult>> executeUpdate(List<ExecutionData> executionDataList,boolean sync) {
-        QueryExecutor queryExecutor = new QueryExecutor(connectionsCache);
-        return queryExecutor.executeUpdate(executionDataList,sync);
+        AutoQueryExecutor autoQueryExecutor = new AutoQueryExecutor(connectionsCache);
+        return autoQueryExecutor.executeUpdate(executionDataList,sync);
     }
 
     @Override
     public Mono<ResponseResult> execute(ExecutionData executionData) {
-        QueryExecutor queryExecutor = new QueryExecutor(connectionsCache);
-        return queryExecutor.execute(executionData);
+        AutoQueryExecutor autoQueryExecutor = new AutoQueryExecutor(connectionsCache);
+        return autoQueryExecutor.execute(executionData);
     }
 
     @Override
     public Mono<List<ResponseResult>> execute(List<ExecutionData> executionDataList,boolean sync) {
-        QueryExecutor queryExecutor = new QueryExecutor(connectionsCache);
-        return queryExecutor.execute(executionDataList,sync);
+        AutoQueryExecutor autoQueryExecutor = new AutoQueryExecutor(connectionsCache);
+        return autoQueryExecutor.execute(executionDataList,sync);
     }
 
 

@@ -1,5 +1,7 @@
 package com.oneentropy.reactive.template.services.impl;
 
+import com.oneentropy.reactive.template.exceptions.NoDBSessionFoundException;
+import com.oneentropy.reactive.template.factory.ManualQueryExecutor;
 import com.oneentropy.reactive.template.model.*;
 import com.oneentropy.reactive.template.util.TemplateUtil;
 import com.zaxxer.hikari.HikariPoolMXBean;
@@ -25,22 +27,52 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
-public class QueryExecutor {
+public class ManualQueryExecutorImpl implements ManualQueryExecutor {
 
     private static final String SUCCESS = "SUCCESS";
     private static final String FAILURE = "FAILURE";
+
+    private String sessionId;
     private static MBeanServer mBeanServer = ManagementFactory.getPlatformMBeanServer();
     private RunningConnections runningConnections;
     private ConnectionsCache connectionsCache;
 
-    public QueryExecutor(ConnectionsCache connectionsCache) {
+    public ManualQueryExecutorImpl(ConnectionsCache connectionsCache) {
         initConnectionCache();
         this.connectionsCache = connectionsCache;
     }
 
+    @Override
+    public void begin() {
+        this.sessionId = UUID.randomUUID().toString();
+        log.debug("Creating a new session:{}", this.sessionId);
+        runningConnections.setSessionId(this.sessionId);
+    }
+
+    @Override
+    public void commit() {
+        log.debug("Committing the changes of session:{}", this.sessionId);
+        runningConnections.commit();
+        runningConnections.returnConnectionsToPool();
+    }
+
+    @Override
+    public void rollback() {
+        log.debug("Rolling-back the changes of session:{}", this.sessionId);
+        runningConnections.rollback(this.sessionId);
+        runningConnections.returnConnectionsToPool();
+    }
+
+    @Override
+    public Map<String, Map<String, ConnectionInfo>> getConnectionsInfo() {
+        return runningConnections.getActiveConnections();
+    }
+
+    @Override
     public Template getConnection(String connName, String UUID, boolean namedParams) throws SQLException {
         if (!TemplateUtil.hasContent(connName) || connectionsCache.getConnections().get(connName) == null) {
             log.error("No connections found with Name:{}", connName);
@@ -70,13 +102,16 @@ public class QueryExecutor {
 
     }
 
+    @Override
     public void initConnectionCache() {
 
         if (runningConnections == null)
             runningConnections = new RunningConnections();
     }
 
-    public Mono<ResponseResult> executeUpdate(ExecutionData executionData) {
+    @Override
+    public Mono<ResponseResult> executeUpdate(ExecutionData executionData) throws NoDBSessionFoundException {
+        validateSession();
         boolean namedParams = executionData.isNamedParamsExecution();
         try {
             String uuid = UUID.randomUUID().toString();
@@ -98,14 +133,10 @@ public class QueryExecutor {
                     long endTime = System.currentTimeMillis();
                     runningConnections.updateStatus(executionData.getConnName(), uuid, ConnectionInfo.IDLE);
                     logSuccess(startTime, endTime, executionData.getSql(), rowsAffected);
-                    runningConnections.commit();
-                    runningConnections.returnConnectionsToPool();
                     return Mono.just(ResponseResult.builder().status(SUCCESS).rowsAffected(rowsAffected).build());
                 }).onErrorResume(exception -> {
                     logFailure(startTime, System.currentTimeMillis(), executionData.getSql(), exception);
                     runningConnections.updateStatus(executionData.getConnName(), uuid, ConnectionInfo.IDLE);
-                    runningConnections.rollback();
-                    runningConnections.returnConnectionsToPool();
                     return handleException(exception);
                 });
             }).subscribeOn(Schedulers.boundedElastic());
@@ -114,7 +145,9 @@ public class QueryExecutor {
         }
     }
 
-    public Mono<List<ResponseResult>> executeUpdate(List<ExecutionData> executionDataList, boolean sync) {
+    @Override
+    public Mono<List<ResponseResult>> executeUpdate(List<ExecutionData> executionDataList, boolean sync) throws NoDBSessionFoundException {
+        validateSession();
         Scheduler schedulerHolder = null;
         if (sync) {
             log.debug("Executing Queries in synchronized mode on a single thread");
@@ -123,55 +156,47 @@ public class QueryExecutor {
             schedulerHolder = Schedulers.boundedElastic();
         Scheduler scheduler = schedulerHolder;
         return Flux.fromIterable(executionDataList).flatMap(executionData -> {
-            boolean namedParams = executionData.isNamedParamsExecution();
+                    boolean namedParams = executionData.isNamedParamsExecution();
 
-            try {
-                String uuid = UUID.randomUUID().toString();
-                Template templateHolder = null;
-                if (namedParams)
-                    templateHolder = getConnection(executionData.getConnName(), uuid, true);
-                else
-                    templateHolder = getConnection(executionData.getConnName(), uuid, false);
-                Template template = templateHolder;
-                runningConnections.updateStatus(executionData.getConnName(), uuid, ConnectionInfo.RUNNING);
-                return Mono.defer(() -> {
-                    long startTime = System.currentTimeMillis();
-                    return Mono.defer(() -> {
-                        int rowsAffected = -1;
+                    try {
+                        String uuid = UUID.randomUUID().toString();
+                        Template templateHolder = null;
                         if (namedParams)
-                            rowsAffected = template.getNamedParameterJdbcTemplate().update(executionData.getSql(), executionData.getNamedParams());
+                            templateHolder = getConnection(executionData.getConnName(), uuid, true);
                         else
-                            rowsAffected = template.getJdbcTemplate().update(executionData.getSql(), executionData.getParams());
-                        long endTime = System.currentTimeMillis();
-                        runningConnections.updateStatus(executionData.getConnName(), uuid, ConnectionInfo.IDLE);
-                        logSuccess(startTime, endTime, executionData.getSql(), rowsAffected);
-                        return Mono.just(ResponseResult.builder().status(SUCCESS).rowsAffected(rowsAffected).build());
-                    }).onErrorResume(exception -> {
-                        logFailure(startTime, System.currentTimeMillis(), executionData.getSql(), exception);
-                        runningConnections.updateStatus(executionData.getConnName(), uuid, ConnectionInfo.IDLE);
-                        return handleException(exception);
-                    }).subscribeOn(scheduler);
-                });
-            } catch (SQLException e) {
-                return handleException(e);
-            }
-        }).collectList().flatMap(responseResults -> {
-            boolean rollback = false;
-            for (ResponseResult responseResult : responseResults)
-                if (responseResult.getStatus().equals(FAILURE)) {
-                    rollback = true;
-                    break;
-                }
-            if (rollback) runningConnections.rollback();
-            else runningConnections.commit();
-            runningConnections.returnConnectionsToPool();
-            return Mono.just(responseResults);
-        }).subscribeOn(scheduler);
+                            templateHolder = getConnection(executionData.getConnName(), uuid, false);
+                        Template template = templateHolder;
+                        runningConnections.updateStatus(executionData.getConnName(), uuid, ConnectionInfo.RUNNING);
+                        return Mono.defer(() -> {
+                            long startTime = System.currentTimeMillis();
+                            return Mono.defer(() -> {
+                                int rowsAffected = -1;
+                                if (namedParams)
+                                    rowsAffected = template.getNamedParameterJdbcTemplate().update(executionData.getSql(), executionData.getNamedParams());
+                                else
+                                    rowsAffected = template.getJdbcTemplate().update(executionData.getSql(), executionData.getParams());
+                                long endTime = System.currentTimeMillis();
+                                runningConnections.updateStatus(executionData.getConnName(), uuid, ConnectionInfo.IDLE);
+                                logSuccess(startTime, endTime, executionData.getSql(), rowsAffected);
+                                return Mono.just(ResponseResult.builder().status(SUCCESS).rowsAffected(rowsAffected).build());
+                            }).onErrorResume(exception -> {
+                                logFailure(startTime, System.currentTimeMillis(), executionData.getSql(), exception);
+                                runningConnections.updateStatus(executionData.getConnName(), uuid, ConnectionInfo.IDLE);
+                                return handleException(exception);
+                            }).subscribeOn(scheduler);
+                        });
+                    } catch (SQLException e) {
+                        return handleException(e);
+                    }
+                }).collectList()
+                .subscribeOn(scheduler);
 
 
     }
 
-    public Mono<ResponseResult> execute(ExecutionData executionData) {
+    @Override
+    public Mono<ResponseResult> execute(ExecutionData executionData) throws NoDBSessionFoundException {
+        validateSession();
         boolean namedParams = executionData.isNamedParamsExecution();
         try {
             String uuid = UUID.randomUUID().toString();
@@ -193,14 +218,10 @@ public class QueryExecutor {
                             long endTime = System.currentTimeMillis();
                             logSuccess(startTime, endTime, executionData.getSql(), payload.toString());
                             runningConnections.updateStatus(executionData.getConnName(), uuid, ConnectionInfo.IDLE);
-                            runningConnections.commit();
-                            runningConnections.returnConnectionsToPool();
                             return Mono.just(ResponseResult.builder().status(SUCCESS).payload(payload).build());
                         }).onErrorResume(exception -> {
                             logFailure(startTime, System.currentTimeMillis(), executionData.getSql(), exception);
                             runningConnections.updateStatus(executionData.getConnName(), uuid, ConnectionInfo.IDLE);
-                            runningConnections.rollback();
-                            runningConnections.returnConnectionsToPool();
                             return handleException(exception);
                         });
                     })
@@ -210,7 +231,9 @@ public class QueryExecutor {
         }
     }
 
-    public Mono<List<ResponseResult>> execute(List<ExecutionData> executionDataList, boolean sync) {
+    @Override
+    public Mono<List<ResponseResult>> execute(List<ExecutionData> executionDataList, boolean sync) throws NoDBSessionFoundException {
+        validateSession();
         Scheduler schedulerHolder = null;
         if (sync) {
             log.debug("Executing Queries in synchronized mode on a single thread");
@@ -250,21 +273,15 @@ public class QueryExecutor {
                     } catch (SQLException e) {
                         return handleException(e);
                     }
-                }).collectList().flatMap(responseResults -> {
-                    boolean rollback = false;
-                    for (ResponseResult responseResult : responseResults)
-                        if (responseResult.getStatus().equals(FAILURE)) {
-                            rollback = true;
-                            break;
-                        }
-                    if (rollback) runningConnections.rollback();
-                    else runningConnections.commit();
-                    runningConnections.returnConnectionsToPool();
-                    return Mono.just(responseResults);
-                })
+                }).collectList()
                 .subscribeOn(scheduler);
 
 
+    }
+
+    private void validateSession() throws NoDBSessionFoundException {
+        if (!TemplateUtil.hasContent(this.sessionId))
+            throw new NoDBSessionFoundException("No valid session found to execute the queries");
     }
 
     private static Mono<ResponseResult> handleException(Throwable exception) {

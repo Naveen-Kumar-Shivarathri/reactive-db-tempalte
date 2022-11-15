@@ -6,8 +6,8 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.util.Map;
-import java.util.TreeMap;
+import java.sql.Savepoint;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Getter
@@ -19,6 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class RunningConnections {
 
     private Map<String, Map<String, ConnectionInfo>> activeConnections;
+    private String sessionId;
 
     public void put(String connName, String UUID, Connection connection){
         if(activeConnections==null)
@@ -72,6 +73,10 @@ public class RunningConnections {
         if(!TemplateUtil.hasContent(activeConnections)){
             log.error("Cannot commit, as no connections are pooled");
         }
+        if(this.sessionId==null){
+            log.error("Cannot commit, as there is no session defined");
+            return;
+        }
         for(Map.Entry<String, Map<String, ConnectionInfo>> connection: activeConnections.entrySet()){
 
             for(Map.Entry<String, ConnectionInfo> connectionInfoEntry: connection.getValue().entrySet()){
@@ -105,6 +110,47 @@ public class RunningConnections {
         }
     }
 
+    public void commit(String uuid){
+        if(activeConnections==null){
+            log.error("Cannot commit, Active Connections are not yet populated");
+        }
+        if(!TemplateUtil.hasContent(activeConnections)){
+            log.error("Cannot commit, as no connections are pooled");
+        }
+        for(Map.Entry<String, Map<String, ConnectionInfo>> connection: activeConnections.entrySet()){
+
+            for(Map.Entry<String, ConnectionInfo> connectionInfoEntry: connection.getValue().entrySet()){
+                try {
+                    connectionInfoEntry.getValue().getConnection().commit();
+                } catch (SQLException e) {
+                    log.error("Encountered exception while committing the transaction on connection:{}, error:{}",connectionInfoEntry.getKey(), e.getMessage());
+                }
+            }
+
+        }
+    }
+
+    public void rollback(String uuid){
+        if(activeConnections==null){
+            log.error("Cannot rollback, Active Connections are not yet populated");
+        }
+        if(!TemplateUtil.hasContent(activeConnections)){
+            log.error("Cannot rollback, as no connections are pooled");
+        }
+        for(Map.Entry<String, Map<String, ConnectionInfo>> connection: activeConnections.entrySet()){
+
+            for(Map.Entry<String, ConnectionInfo> connectionInfoEntry: connection.getValue().entrySet()){
+                try {
+                    Savepoint savepoint = connectionInfoEntry.getValue().getSavePoint();
+                    connectionInfoEntry.getValue().getConnection().rollback(savepoint);
+                } catch (SQLException e) {
+                    log.error("Encountered exception while rolling-back the transaction on connection:{}, error:{}",connectionInfoEntry.getKey(), e.getMessage());
+                }
+            }
+
+        }
+    }
+
     public void returnConnectionsToPool(){
         if(activeConnections==null){
             log.error("Cannot return connections to pool, Active Connections are not yet populated");
@@ -124,5 +170,28 @@ public class RunningConnections {
 
         }
     }
+
+    public void createSavePoints(String uuid){
+        if(activeConnections==null){
+            log.error("Cannot create a Savepoint, Active Connections are not yet populated");
+        }
+        if(!TemplateUtil.hasContent(activeConnections)){
+            log.error("Cannot create a SavePoint, as no connections are pooled");
+        }
+        for(Map.Entry<String, Map<String, ConnectionInfo>> connection: activeConnections.entrySet()){
+
+            for(Map.Entry<String, ConnectionInfo> connectionInfoEntry: connection.getValue().entrySet()){
+                try {
+                    Savepoint savepoint = connectionInfoEntry.getValue().getConnection().setSavepoint(uuid);
+                    connectionInfoEntry.getValue().setSavePoint(savepoint);
+                } catch (SQLException e) {
+                    log.error("Encountered exception while committing the transaction on connection:{}, error:{}",connectionInfoEntry.getKey(), e.getMessage());
+                }
+            }
+
+        }
+
+    }
+
 
 }

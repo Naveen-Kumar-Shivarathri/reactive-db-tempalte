@@ -3,6 +3,7 @@ package com.oneentropy.reactive.template.model;
 import lombok.*;
 
 import java.sql.Connection;
+import java.sql.Savepoint;
 
 @Getter
 @Setter
@@ -16,5 +17,6 @@ public class ConnectionInfo {
 
     private Connection connection;
     private String status;
+    private Savepoint savePoint;
 
 }

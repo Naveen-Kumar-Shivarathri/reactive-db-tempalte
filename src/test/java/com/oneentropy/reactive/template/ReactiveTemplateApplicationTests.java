@@ -2,6 +2,9 @@ package com.oneentropy.reactive.template;
 
 import com.oneentropy.reactive.template.conf.ConnectionsConfig;
 import com.oneentropy.reactive.template.conf.DatabaseProperties;
+import com.oneentropy.reactive.template.exceptions.NoDBSessionFoundException;
+import com.oneentropy.reactive.template.factory.ManualQueryExecutor;
+import com.oneentropy.reactive.template.factory.QueryExecutorFactory;
 import com.oneentropy.reactive.template.model.ConnectionsCache;
 import com.oneentropy.reactive.template.model.ExecutionData;
 import com.oneentropy.reactive.template.model.ResponseResult;
@@ -33,8 +36,11 @@ class ReactiveTemplateApplicationTests {
 	@Autowired
 	private TransactionalQueryService transactionalQueryService;
 
+	@Autowired
+	private QueryExecutorFactory queryExecutorFactory;
+
 	@Test
-	void testUpdateQueryCall() {
+	void testAutomaticQueryExecution() {
 
 		String insert = "insert into tableA (columnA,columnB) values(?,?)";
 		String deleteSql = "delete from tableA where columnA=?";
@@ -51,6 +57,30 @@ class ReactiveTemplateApplicationTests {
 					});
 				})
 				.verifyComplete();
+
+	}
+
+	@Test
+	void testManualControlQueryExecution() throws NoDBSessionFoundException {
+
+		String insert = "insert into tableA (columnA,columnB) values(?,?)";
+		String deleteSql = "delete from tableA where columnA=?";
+		String select = "select * from tableA where columnA=?";
+		List<ExecutionData> executionDataList = new ArrayList<>();
+		ManualQueryExecutor manualQueryExecutor = queryExecutorFactory.createManualQueryExecutor();
+		for(int iterator=0;iterator<10;iterator++){
+			executionDataList.add(ExecutionData.builder().sql(deleteSql).params(new Object[]{iterator}).connName("mysql").build());
+		}
+		manualQueryExecutor.begin();
+		Mono<List<ResponseResult>> responseResultMono = manualQueryExecutor.executeUpdate(executionDataList,false);
+		StepVerifier.create(responseResultMono)
+				.expectNextMatches(responseResult -> {
+					return responseResult.stream().allMatch(responseResult1 -> {
+						return responseResult1.getStatus().equals("SUCCESS");
+					});
+				})
+				.verifyComplete();
+		manualQueryExecutor.commit();
 
 	}
 

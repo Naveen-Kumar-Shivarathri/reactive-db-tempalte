@@ -3,5 +3,6 @@ oneentropy:
     mysql:
       url: jdbc:mysql://localhost:3306/playground
       username: root
-      password:
+      password: 101410
       driver: com.mysql.cj.jdbc.Driver
+
